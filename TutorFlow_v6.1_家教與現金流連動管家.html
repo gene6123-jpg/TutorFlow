@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="TutorFlow" />
+  <title>TutorFlow v6.1 — 家教與現金流連動管家</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tesseract.js 瀏覽器端 OCR 辨識引擎 -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    body {
+      font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #F8FAFC;
+      color: #0F172A;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: none;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col max-w-[480px] mx-auto bg-[#F8FAFC] relative shadow-xs">
+
+  <!-- 隱藏的相機與相簿選擇器 (供 OCR 掃描帳單使用) -->
+  <input id="ocr-camera-input" type="file" accept="image/*" capture="environment" class="hidden" onchange="handleReceiptImageSelect(event)" />
+  <input id="ocr-gallery-input" type="file" accept="image/*" class="hidden" onchange="handleReceiptImageSelect(event)" />
+
+  <!-- 頂部狀態列 -->
+  <header class="sticky top-0 z-30 bg-[#F8FAFC]/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center">
+        <span class="text-emerald-400 font-extrabold text-xs tracking-tighter">TF</span>
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-slate-900 tracking-tight leading-none">TutorFlow</h1>
+        <p class="text-[11px] text-slate-500 mt-0.5" id="header-month-label">2026年11月</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <button onclick="openManualExpenseModal()" class="text-xs px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold transition active:scale-95">
+        + 手動記支出
+      </button>
+      <button onclick="openExtraIncomeModal()" class="text-xs px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold transition active:scale-95">
+        + 加收入
+      </button>
+    </div>
+  </header>
+
+  <!-- 全域輕量提示 Toast -->
+  <div id="toast-container" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none w-full max-w-xs px-4"></div>
+
+  <!-- OCR 掃描處理中遮罩 -->
+  <div id="ocr-loading-overlay" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl p-6 max-w-xs w-full text-center shadow-xl space-y-3">
+      <div class="w-10 h-10 border-4 border-slate-200 border-t-emerald-500 rounded-full animate-spin mx-auto"></div>
+      <div class="text-sm font-bold text-slate-900">正在辨識帳單金額...</div>
+      <p class="text-xs text-slate-500" id="ocr-status-text">讀取收據文字中，請稍候幾秒</p>
+    </div>
+  </div>
+
+  <!-- 主內容捲動區 -->
+  <main id="main-content" class="flex-1 overflow-y-auto no-scrollbar px-4 pt-4 pb-24 space-y-4">
+    <!-- 由 JS 動態渲染分頁內容 -->
+  </main>
+
+  <!-- 底部三頁切換導覽列 -->
+  <nav class="fixed bottom-0 w-full max-w-[480px] bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-2 flex justify-around items-center z-30">
+    <button onclick="switchTab('ledger')" data-tab="ledger" class="nav-btn flex flex-col items-center justify-center py-1 px-3 rounded-xl transition w-1/3 text-slate-900">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+      </svg>
+      <span class="text-[11px] font-semibold">總覽與記帳</span>
+    </button>
+    <button onclick="switchTab('tutoring')" data-tab="tutoring" class="nav-btn flex flex-col items-center justify-center py-1 px-3 rounded-xl transition w-1/3 text-slate-400 hover:text-slate-700">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+      <span class="text-[11px] font-semibold">家教排程</span>
+    </button>
+    <button onclick="switchTab('settings')" data-tab="settings" class="nav-btn flex flex-col items-center justify-center py-1 px-3 rounded-xl transition w-1/3 text-slate-400 hover:text-slate-700">
+      <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+      </svg>
+      <span class="text-[11px] font-semibold">固定與月結</span>
+    </button>
+  </nav>
+
+  <!-- 統一彈跳視窗容器 -->
+  <div id="modal-overlay" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="modal-box" class="bg-white border-t sm:border border-slate-200 rounded-t-3xl sm:rounded-2xl w-full max-w-[480px] p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <!-- 動態表單內容 -->
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'tutorflow_v6_1_clean_data';
+
+    // 支出分類定義（必要花費三大子分類 + 娛樂花費）
+    const SUBCAT_META = {
+      commute: { label: '通勤費用', icon: '🚇', group: '必要花費', badgeClass: 'bg-sky-50 text-sky-700 border-sky-200' },
+      food:    { label: '伙食費用', icon: '🍱', group: '必要花費', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+      daily:   { label: '生活用品費用', icon: '🧴', group: '必要花費', badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+      fun:     { label: '娛樂花費', icon: '🎮', group: '娛樂花費', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' }
+    };
+
+    const WEEKDAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+
+    function getCurrentYearMonth() {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function getDefaultState() {
+      const ym = getCurrentYearMonth();
+      return {
+        currentMonth: ym, // YYYY-MM
+        activeTab: 'ledger',
+        expenseFilter: 'all', // all | necessary | commute | food | daily | fun
+        fixedRules: [
+          { id: 'fr_allowance', title: '每月生活費（6號入帳）', type: 'income', amount: 7000 },
+          { id: 'fr_invest', title: '定期定額投資', type: 'expense', amount: 4000 },
+          { id: 'fr_gym', title: '健身房會費', type: 'expense', amount: 1100 }
+        ],
+        students: [
+          { id: 'st_shanghai', name: '上海妹妹', billingType: 'hourly', rate: 500, defaultHours: 2, color: 'emerald' },
+          { id: 'st_zhishan', name: '芝山弟弟', billingType: 'session', rate: 1200, defaultHours: 1, color: 'sky' },
+          { id: 'st_skating', name: '溜冰妹妹', billingType: 'session', rate: 750, defaultHours: 1, color: 'violet' }
+        ],
+        // 課程排程：status = 'pending' (月結待收款) | 'paid' (已實領入帳)
+        lessons: [],
+        // 日常變動支出：subcat = 'commute' | 'food' | 'daily' | 'fun'
+        expenses: [],
+        // 額外臨時收入
+        extraIncomes: [],
+        // 歷史月結報表（自動滾動保留最近 3 個已結算月份）
+        archivedMonths: []
+      };
+    }
+
+    let state = loadState();
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return getDefaultState();
+        const parsed = JSON.parse(raw);
+        return { ...getDefaultState(), ...parsed };
+      } catch (e) {
+        return getDefaultState();
+      }
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (e) {
+        console.error('儲存本地資料失敗:', e);
+      }
+    }
+
+    function formatMonthLabel(ym) {
+      const [y, m] = ym.split('-');
+      return `${y}年${parseInt(m, 10)}月`;
+    }
+
+    function formatDateWithWeekday(dateStr) {
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return dateStr;
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const wd = WEEKDAY_NAMES[d.getDay()];
+      return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)} (週${wd})`;
+    }
+
+    function showToast(msg, type = 'dark') {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      const bg = type === 'success' ? 'bg-emerald-600' : (type === 'warn' ? 'bg-amber-600' : 'bg-slate-900');
+      el.className = `${bg} text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg text-center mb-2 transition-all duration-300`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+      }, 2200);
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      saveState();
+      render();
+    }
+
+    function computeFinancials() {
+      const fixedIncome = state.fixedRules
+        .filter(r => r.type === 'income')
+        .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
+      const fixedExpense = state.fixedRules
+        .filter(r => r.type === 'expense')
+        .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+
+      // 家教：區分已實領入帳 vs 月結待收款
+      const paidLessons = state.lessons.filter(l => l.status === 'paid');
+      const pendingLessons = state.lessons.filter(l => l.status === 'pending');
+
+      const paidTutoringIncome = paidLessons.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+      const pendingTutoringIncome = pendingLessons.reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+      const extraIncomeTotal = state.extraIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+      // 當月已確認實領總收入（僅計算已領薪的家教 + 固定生活費 + 額外收入）
+      const realizedIncome = fixedIncome + paidTutoringIncome + extraIncomeTotal;
+
+      // 日常記帳花費
+      const dailyExpenseTotal = state.expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+      // 子分類統計
+      const bySubcat = { commute: 0, food: 0, daily: 0, fun: 0 };
+      state.expenses.forEach(e => {
+        const key = SUBCAT_META[e.subcat] ? e.subcat : 'food';
+        bySubcat[key] += Number(e.amount || 0);
+      });
+      const necessaryTotal = bySubcat.commute + bySubcat.food + bySubcat.daily;
+      const funTotal = bySubcat.fun;
+
+      // 實際可用淨收入 = 已實領總收入 - 固定扣款 - 日常記帳總花費
+      const netAvailable = realizedIncome - fixedExpense - dailyExpenseTotal;
+
+      // 若待收款全數領齊後的預估淨收入
+      const projectedNetIfAllPaid = netAvailable + pendingTutoringIncome;
+
+      return {
+        fixedIncome,
+        fixedExpense,
+        paidLessons,
+        pendingLessons,
+        paidTutoringIncome,
+        pendingTutoringIncome,
+        extraIncomeTotal,
+        realizedIncome,
+        dailyExpenseTotal,
+        bySubcat,
+        necessaryTotal,
+        funTotal,
+        netAvailable,
+        projectedNetIfAllPaid
+      };
+    }
+
+    function render() {
+      document.getElementById('header-month-label').textContent = formatMonthLabel(state.currentMonth);
+
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        if (btn.dataset.tab === state.activeTab) {
+          btn.classList.remove('text-slate-400');
+          btn.classList.add('text-slate-900', 'bg-slate-100/80');
+        } else {
+          btn.classList.remove('text-slate-900', 'bg-slate-100/80');
+          btn.classList.add('text-slate-400');
+        }
+      });
+
+      const main = document.getElementById('main-content');
+      if (state.activeTab === 'ledger') {
+        main.innerHTML = renderLedgerTab();
+      } else if (state.activeTab === 'tutoring') {
+        main.innerHTML = renderTutoringTab();
+      } else {
+        main.innerHTML = renderSettingsTab();
+      }
+    }
+
+    // ==================== 分頁一：總覽與記帳（無佔比條、無捷運快捷鍵） ====================
+    function renderLedgerTab() {
+      const f = computeFinancials();
+
+      const filteredExpenses = state.expenses.filter(e => {
+        if (state.expenseFilter === 'all') return true;
+        if (state.expenseFilter === 'necessary') return ['commute', 'food', 'daily'].includes(e.subcat);
+        return e.subcat === state.expenseFilter;
+      });
+
+      const filterBtns = [
+        { id: 'all', label: `全部 (${state.expenses.length})` },
+        { id: 'necessary', label: `必要合計 ($${f.necessaryTotal.toLocaleString()})` },
+        { id: 'commute', label: '🚇 通勤' },
+        { id: 'food', label: '🍱 伙食' },
+        { id: 'daily', label: '🧴 生活用品' },
+        { id: 'fun', label: '🎮 娛樂' }
+      ];
+
+      return `
+        <!-- 核心現金流儀表板（極簡無佔比條版） -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-xs font-medium text-slate-500">本月實際可用淨收入</div>
+              <div class="text-3xl font-extrabold tracking-tight mt-0.5 ${f.netAvailable >= 0 ? 'text-slate-900' : 'text-rose-600'}">
+                NT$ ${f.netAvailable.toLocaleString()}
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                ⏳ 待領家教 $${f.pendingTutoringIncome.toLocaleString()}
+              </span>
+              <div class="text-[11px] text-slate-400 mt-1">
+                若全領預估：$${f.projectedNetIfAllPaid.toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
+            <div class="bg-slate-50 rounded-xl p-2">
+              <div class="text-[11px] text-slate-500">已實領總收入</div>
+              <div class="text-sm font-bold text-emerald-600 mt-0.5">+$${f.realizedIncome.toLocaleString()}</div>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-2">
+              <div class="text-[11px] text-slate-500">固定投資/健身</div>
+              <div class="text-sm font-bold text-slate-700 mt-0.5">-$${f.fixedExpense.toLocaleString()}</div>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-2">
+              <div class="text-[11px] text-slate-500">日常記帳支出</div>
+              <div class="text-sm font-bold text-rose-600 mt-0.5">-$${f.dailyExpenseTotal.toLocaleString()}</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 帳單轉費用（拍照 / 相簿） -->
+        <section class="grid grid-cols-2 gap-2.5">
+          <button onclick="triggerReceiptOCR('camera')" class="bg-white hover:bg-slate-50 active:scale-[0.99] transition rounded-2xl border border-slate-200/90 p-3.5 flex items-center gap-3 text-left shadow-2xs">
+            <div class="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center text-lg shrink-0">📷</div>
+            <div>
+              <div class="text-xs font-bold text-slate-900">拍照帳單轉費用</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">拍收據自動抓金額</div>
+            </div>
+          </button>
+          <button onclick="triggerReceiptOCR('gallery')" class="bg-white hover:bg-slate-50 active:scale-[0.99] transition rounded-2xl border border-slate-200/90 p-3.5 flex items-center gap-3 text-left shadow-2xs">
+            <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center text-lg shrink-0">🖼️</div>
+            <div>
+              <div class="text-xs font-bold text-slate-900">相簿帳單轉費用</div>
+              <div class="text-[11px] text-slate-500 mt-0.5">選截圖/發票辨識</div>
+            </div>
+          </button>
+        </section>
+
+        <!-- 本月日常支出明細與分類篩選 -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-900">本月記帳明細</h2>
+            <span class="text-xs text-slate-400">共 ${filteredExpenses.length} 筆</span>
+          </div>
+
+          <!-- 分類篩選器 -->
+          <div class="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+            ${filterBtns.map(b => `
+              <button onclick="setExpenseFilter('${b.id}')" class="shrink-0 text-xs px-3 py-1.5 rounded-full font-medium transition ${
+                state.expenseFilter === b.id
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
+              }">${b.label}</button>
+            `).join('')}
+          </div>
+
+          <!-- 支出清單 -->
+          ${filteredExpenses.length === 0 ? `
+            <div class="py-8 text-center space-y-1">
+              <div class="text-sm font-medium text-slate-400">目前尚無符合的支出紀錄</div>
+              <div class="text-xs text-slate-400">點擊右上角「+ 手動記支出」或上方掃描帳單開始記錄</div>
+            </div>
+          ` : `
+            <div class="divide-y divide-slate-100">
+              ${filteredExpenses.slice().reverse().map(item => {
+                const meta = SUBCAT_META[item.subcat] || SUBCAT_META.food;
+                return `
+                  <div class="py-2.5 flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-8 h-8 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-center text-sm shrink-0">${meta.icon}</span>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5">
+                          <span class="text-xs font-bold text-slate-900 truncate">${escapeHtml(item.note || meta.label)}</span>
+                          <span class="text-[10px] px-1.5 py-0.5 rounded-md border font-medium shrink-0 ${meta.badgeClass}">${meta.label}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">${formatDateWithWeekday(item.date)}</div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span class="text-sm font-bold text-slate-900">-$${Number(item.amount).toLocaleString()}</span>
+                      <button onclick="deleteExpense('${item.id}')" class="text-slate-300 hover:text-rose-500 p-1 transition" title="刪除">✕</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </section>
+
+        <!-- 本月額外收入明細（若有） -->
+        ${state.extraIncomes.length > 0 ? `
+          <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-2.5">
+            <h2 class="text-sm font-bold text-slate-900">本月額外收入</h2>
+            <div class="divide-y divide-slate-100">
+              ${state.extraIncomes.slice().reverse().map(inc => `
+                <div class="py-2 flex items-center justify-between">
+                  <div>
+                    <div class="text-xs font-bold text-slate-900">${escapeHtml(inc.note || '額外收入')}</div>
+                    <div class="text-[11px] text-slate-400">${formatDateWithWeekday(inc.date)}</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold text-emerald-600">+$${Number(inc.amount).toLocaleString()}</span>
+                    <button onclick="deleteExtraIncome('${inc.id}')" class="text-slate-300 hover:text-rose-500 p-1">✕</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </section>
+        ` : ''}
+      `;
+    }
+
+    function setExpenseFilter(filterId) {
+      state.expenseFilter = filterId;
+      saveState();
+      render();
+    }
+
+    // ==================== 分頁二：家教多日快選與月結實領 ====================
+    function renderTutoringTab() {
+      const f = computeFinancials();
+      const sortedLessons = [...state.lessons].sort((a, b) => a.date.localeCompare(b.date));
+
+      return `
+        <!-- 待收款 vs 已實領總覽卡 -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs text-slate-500">本月待領家教薪資（月結待收款）</div>
+              <div class="text-2xl font-extrabold text-amber-600 mt-0.5">NT$ ${f.pendingTutoringIncome.toLocaleString()}</div>
+            </div>
+            ${f.pendingLessons.length > 0 ? `
+              <button onclick="markAllLessonsPaid()" class="text-xs px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition active:scale-95">
+                一鍵全領入帳 (${f.pendingLessons.length}堂)
+              </button>
+            ` : `
+              <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">已全數入帳</span>
+            `}
+          </div>
+          <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+            <span class="text-slate-500">本月已實領家教入帳（計入可用淨收入）：</span>
+            <span class="font-bold text-emerald-600">+$${f.paidTutoringIncome.toLocaleString()}（${f.paidLessons.length} 堂）</span>
+          </div>
+        </section>
+
+        <!-- 學生名單與多日快選排課按鈕 -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-900">家教學生與多日排課</h2>
+            <button onclick="openAddStudentModal()" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold">
+              + 新增學生
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2">
+            ${state.students.map(st => {
+              const rateText = st.billingType === 'hourly' ? `$${st.rate}/hr` : `$${st.rate}/堂`;
+              return `
+                <div class="p-3 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between">
+                  <div>
+                    <div class="text-sm font-bold text-slate-900">${escapeHtml(st.name)}</div>
+                    <div class="text-xs text-slate-500 mt-0.5">計費標準：${rateText}</div>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <button onclick="openMultiDayScheduleModal('${st.id}')" class="text-xs px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold transition active:scale-95">
+                      📅 多日快選排課
+                    </button>
+                    ${!['st_shanghai', 'st_zhishan', 'st_skating'].includes(st.id) ? `
+                      <button onclick="deleteStudent('${st.id}')" class="text-xs px-2 py-1.5 text-slate-400 hover:text-rose-500">✕</button>
+                    ` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </section>
+
+        <!-- 課程清單（僅保留月/日＋星期，無幾點幾分） -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-900">排課與領薪紀錄</h2>
+            <span class="text-xs text-slate-400">共 ${sortedLessons.length} 堂</span>
+          </div>
+
+          ${sortedLessons.length === 0 ? `
+            <div class="py-8 text-center space-y-1">
+              <div class="text-sm font-medium text-slate-400">尚未排定任何家教課程</div>
+              <div class="text-xs text-slate-400">點擊上方學生的「📅 多日快選排課」可一次選多天</div>
+            </div>
+          ` : `
+            <div class="divide-y divide-slate-100">
+              ${sortedLessons.map(lesson => {
+                const isPaid = lesson.status === 'paid';
+                const detailText = lesson.billingType === 'hourly' ? `${lesson.hours} 小時` : '單堂計費';
+                return `
+                  <div class="py-3 flex items-center justify-between gap-2">
+                    <div>
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-xs font-bold text-slate-900">${escapeHtml(lesson.studentName)}</span>
+                        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-md ${
+                          isPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                        }">
+                          ${isPaid ? '✓ 已實領入帳' : '⏳ 月結待收款'}
+                        </span>
+                      </div>
+                      <div class="text-xs text-slate-500 mt-0.5">
+                        ${formatDateWithWeekday(lesson.date)} · ${detailText} · <span class="font-semibold text-slate-700">$${Number(lesson.amount).toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      ${!isPaid ? `
+                        <button onclick="toggleLessonPaid('${lesson.id}')" class="text-xs px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition">
+                          確認已領薪
+                        </button>
+                      ` : `
+                        <button onclick="toggleLessonPaid('${lesson.id}')" class="text-xs px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium transition">
+                          改回待收
+                        </button>
+                      `}
+                      <button onclick="deleteLesson('${lesson.id}')" class="text-slate-300 hover:text-rose-500 p-1" title="請假/刪除">✕</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `}
+        </section>
+      `;
+    }
+
+    // ==================== 分頁三：固定與月結（近 3 個月歷史報表，無佔比條） ====================
+    function renderSettingsTab() {
+      const f = computeFinancials();
+
+      return `
+        <!-- 固定基準收支設定 -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-bold text-slate-900">每月固定基準收支</h2>
+              <p class="text-[11px] text-slate-500 mt-0.5">固定每月自動計算，不設任何花費上限</p>
+            </div>
+            <button onclick="openAddFixedRuleModal()" class="text-xs px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold">
+              + 新增規則
+            </button>
+          </div>
+
+          <div class="divide-y divide-slate-100">
+            ${state.fixedRules.map(rule => `
+              <div class="py-2.5 flex items-center justify-between">
+                <div>
+                  <div class="text-xs font-bold text-slate-900">${escapeHtml(rule.title)}</div>
+                  <div class="text-[11px] text-slate-400">${rule.type === 'income' ? '固定收入' : '固定扣除'}</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button onclick="openEditFixedRuleModal('${rule.id}')" class="text-sm font-bold ${rule.type === 'income' ? 'text-emerald-600' : 'text-slate-800'} underline decoration-slate-300 underline-offset-4">
+                    ${rule.type === 'income' ? '+' : '-'}$${Number(rule.amount).toLocaleString()}
+                  </button>
+                  ${!['fr_allowance', 'fr_invest', 'fr_gym'].includes(rule.id) ? `
+                    <button onclick="deleteFixedRule('${rule.id}')" class="text-slate-300 hover:text-rose-500 p-1">✕</button>
+                  ` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </section>
+
+        <!-- 月底結算並跨月歸檔 -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div>
+            <h2 class="text-sm font-bold text-slate-900">月底結算與跨月結轉</h2>
+            <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+              點擊下方按鈕將封存 <span class="font-bold text-slate-800">${formatMonthLabel(state.currentMonth)}</span> 的實領收支與分類明細，並自動推進至下個月。<br/>
+              • <span class="font-semibold text-amber-700">尚未領薪的 ${f.pendingLessons.length} 堂家教（$${f.pendingTutoringIncome.toLocaleString()}）</span>會自動結轉保留到下個月，不會遺失。<br/>
+              • 歷史報表自動滾動保留 <span class="font-semibold text-slate-800">最近 3 個已結算月份</span>。
+            </p>
+          </div>
+          <button onclick="settleCurrentMonth()" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition active:scale-[0.99]">
+            結算 ${formatMonthLabel(state.currentMonth)} 並進入下個月
+          </button>
+        </section>
+
+        <!-- 近 3 個月歷史月結報表 -->
+        <section class="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-slate-900">歷史月結報表（近 3 個月）</h2>
+            <span class="text-xs text-slate-400">已存 ${state.archivedMonths.length} / 3 個月</span>
+          </div>
+
+          ${state.archivedMonths.length === 0 ? `
+            <div class="py-6 text-center text-xs text-slate-400">
+              尚未有已結算的歷史月份報表
+            </div>
+          ` : `
+            <div class="space-y-2.5">
+              ${state.archivedMonths.slice().reverse().map(rep => `
+                <div class="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/70 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold text-slate-900">${formatMonthLabel(rep.month)} 結算</span>
+                    <span class="text-sm font-extrabold ${rep.netAvailable >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
+                      淨結餘 $${Number(rep.netAvailable).toLocaleString()}
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-1.5 text-[11px] text-slate-600 pt-1 border-t border-slate-200/60">
+                    <div>實領總收入：<span class="font-semibold text-slate-800">$${Number(rep.realizedIncome).toLocaleString()}</span></div>
+                    <div>固定扣除：<span class="font-semibold text-slate-800">$${Number(rep.fixedExpense).toLocaleString()}</span></div>
+                    <div>🚇 通勤費用：<span class="font-semibold text-slate-800">$${Number(rep.bySubcat.commute || 0).toLocaleString()}</span></div>
+                    <div>🍱 伙食費用：<span class="font-semibold text-slate-800">$${Number(rep.bySubcat.food || 0).toLocaleString()}</span></div>
+                    <div>🧴 生活用品：<span class="font-semibold text-slate-800">$${Number(rep.bySubcat.daily || 0).toLocaleString()}</span></div>
+                    <div>🎮 娛樂花費：<span class="font-semibold text-slate-800">$${Number(rep.bySubcat.fun || 0).toLocaleString()}</span></div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </section>
+      `;
+    }
+
+    // ==================== 彈跳視窗：手動記支出 / 帳單 OCR 確認 ====================
+    let tempExpenseForm = {
+      amount: '',
+      mainGroup: 'necessary', // 'necessary' | 'fun'
+      subcat: 'food', // 'commute' | 'food' | 'daily' | 'fun'
+      note: '',
+      date: ''
+    };
+
+    function getDefaultDateInCurrentMonth() {
+      const now = new Date();
+      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      if (ym === state.currentMonth) {
+        return `${ym}-${String(now.getDate()).padStart(2, '0')}`;
+      }
+      return `${state.currentMonth}-01`;
+    }
+
+    function openManualExpenseModal(prefillAmount = '', prefillNote = '', fromOCR = false) {
+      tempExpenseForm = {
+        amount: prefillAmount ? String(prefillAmount) : '',
+        mainGroup: 'necessary',
+        subcat: 'food',
+        note: prefillNote || '',
+        date: getDefaultDateInCurrentMonth()
+      };
+      renderExpenseModal(fromOCR);
+    }
+
+    function renderExpenseModal(fromOCR = false) {
+      const modalBox = document.getElementById('modal-box');
+      const isFun = tempExpenseForm.mainGroup === 'fun';
+
+      modalBox.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">${fromOCR ? '📄 確認帳單辨識結果' : '記一筆日常支出'}</h3>
+            <p class="text-xs text-slate-500 mt-0.5">選擇歸入必要花費（三大子分類）或娛樂花費</p>
+          </div>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg px-2">✕</button>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">消費金額 (NT$)</label>
+            <input id="exp-amount-input" type="number" inputmode="numeric" placeholder="輸入金額，例如 120" value="${tempExpenseForm.amount}"
+              oninput="tempExpenseForm.amount = this.value"
+              class="w-full text-xl font-extrabold px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-slate-900" />
+          </div>
+
+          <!-- 大分類切換：必要花費 vs 娛樂花費 -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1.5">支出大類</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" onclick="selectExpenseMainGroup('necessary')" class="py-2.5 px-3 rounded-xl border text-xs font-bold transition ${
+                !isFun ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
+              }">
+                📌 必要花費
+              </button>
+              <button type="button" onclick="selectExpenseMainGroup('fun')" class="py-2.5 px-3 rounded-xl border text-xs font-bold transition ${
+                isFun ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200'
+              }">
+                🎮 娛樂花費（手動標籤）
+              </button>
+            </div>
+          </div>
+
+          ${!isFun ? `
+            <!-- 必要花費三大子分類 -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1.5">必要花費子分類</label>
+              <div class="grid grid-cols-3 gap-2">
+                ${['commute', 'food', 'daily'].map(key => {
+                  const m = SUBCAT_META[key];
+                  const active = tempExpenseForm.subcat === key;
+                  return `
+                    <button type="button" onclick="selectNecessarySubcat('${key}')" class="py-2.5 px-2 rounded-xl border text-center transition ${
+                      active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200'
+                    }">
+                      <div class="text-base">${m.icon}</div>
+                      <div class="text-[11px] font-bold mt-0.5">${m.label.replace('費用', '')}</div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">備註項目（選填）</label>
+              <input id="exp-note-input" type="text" placeholder="例如：午餐便當、捷運、剪頭髮..." value="${escapeHtml(tempExpenseForm.note)}"
+                oninput="tempExpenseForm.note = this.value"
+                class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-slate-900" />
+            </div>
+          ` : `
+            <!-- 娛樂花費手動輸入標籤 -->
+            <div>
+              <label class="block text-xs font-semibold text-rose-700 mb-1">手動輸入娛樂標籤／項目名稱 *</label>
+              <input id="exp-note-input" type="text" placeholder="例如：看電影、手搖飲、聚餐、買遊戲..." value="${escapeHtml(tempExpenseForm.note)}"
+                oninput="tempExpenseForm.note = this.value"
+                class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-rose-300 bg-rose-50/30 focus:outline-none focus:border-rose-600" />
+            </div>
+          `}
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">消費日期</label>
+            <input id="exp-date-input" type="date" value="${tempExpenseForm.date}"
+              onchange="tempExpenseForm.date = this.value"
+              class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-slate-900" />
+          </div>
+        </div>
+
+        <button onclick="submitExpenseForm()" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition active:scale-[0.99]">
+          確認記帳並扣款
+        </button>
+      `;
+
+      document.getElementById('modal-overlay').classList.remove('hidden');
+      setTimeout(() => {
+        const inp = document.getElementById('exp-amount-input');
+        if (inp && !tempExpenseForm.amount) inp.focus();
+      }, 60);
+    }
+
+    function selectExpenseMainGroup(group) {
+      tempExpenseForm.mainGroup = group;
+      if (group === 'fun') {
+        tempExpenseForm.subcat = 'fun';
+      } else if (tempExpenseForm.subcat === 'fun') {
+        tempExpenseForm.subcat = 'food';
+      }
+      renderExpenseModal(false);
+    }
+
+    function selectNecessarySubcat(subcat) {
+      tempExpenseForm.subcat = subcat;
+      renderExpenseModal(false);
+    }
+
+    function submitExpenseForm() {
+      const amt = Number(tempExpenseForm.amount);
+      if (!amt || amt <= 0) {
+        showToast('請輸入大於 0 的金額', 'warn');
+        return;
+      }
+      if (tempExpenseForm.mainGroup === 'fun' && !tempExpenseForm.note.trim()) {
+        showToast('請手動輸入娛樂花費的標籤名稱', 'warn');
+        return;
+      }
+      const subcat = tempExpenseForm.mainGroup === 'fun' ? 'fun' : tempExpenseForm.subcat;
+      const defaultNote = SUBCAT_META[subcat].label;
+
+      state.expenses.push({
+        id: 'exp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        amount: amt,
+        subcat: subcat,
+        note: tempExpenseForm.note.trim() || defaultNote,
+        date: tempExpenseForm.date || getDefaultDateInCurrentMonth()
+      });
+
+      saveState();
+      closeModal();
+      render();
+      showToast(`已記錄 ${SUBCAT_META[subcat].icon} -$${amt.toLocaleString()}`, 'success');
+    }
+
+    function deleteExpense(id) {
+      state.expenses = state.expenses.filter(e => e.id !== id);
+      saveState();
+      render();
+      showToast('已刪除該筆支出');
+    }
+
+    // ==================== 拍照 / 相簿帳單 OCR 辨識 ====================
+    function triggerReceiptOCR(source) {
+      if (source === 'camera') {
+        document.getElementById('ocr-camera-input').click();
+      } else {
+        document.getElementById('ocr-gallery-input').click();
+      }
+    }
+
+    async function handleReceiptImageSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+
+      const overlay = document.getElementById('ocr-loading-overlay');
+      const statusText = document.getElementById('ocr-status-text');
+      overlay.classList.remove('hidden');
+      statusText.textContent = '正在分析帳單影像文字...';
+
+      try {
+        const result = await Tesseract.recognize(file, 'chi_tra+eng', {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              statusText.textContent = `辨識進度 ${Math.round((m.progress || 0) * 100)}%...`;
+            }
+          }
+        });
+        const text = (result && result.data && result.data.text) ? result.data.text : '';
+        const detectedAmount = extractAmountFromReceiptText(text);
+
+        overlay.classList.add('hidden');
+        if (detectedAmount) {
+          showToast(`成功抓取金額：$${detectedAmount}`, 'success');
+          openManualExpenseModal(detectedAmount, '帳單掃描消費', true);
+        } else {
+          showToast('未能自動判讀金額，請手動確認輸入', 'warn');
+          openManualExpenseModal('', '帳單消費', true);
+        }
+      } catch (err) {
+        overlay.classList.add('hidden');
+        showToast('影像讀取完成，請確認金額與分類', 'warn');
+        openManualExpenseModal('', '帳單消費', true);
+      }
+    }
+
+    function extractAmountFromReceiptText(text) {
+      if (!text) return '';
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const priorityKeywords = /(總計|合計|應付|實付|總金額|TOTAL|AMOUNT|NT\$|\$)/i;
+      let candidates = [];
+
+      lines.forEach(line => {
+        const matches = line.match(/\d{1,3}(?:,\d{3})*(?:\.\d+)?/g);
+        if (!matches) return;
+        matches.forEach(rawNum => {
+          const val = Math.round(parseFloat(rawNum.replace(/,/g, '')));
+          if (val >= 10 && val <= 50000) {
+            const hasKey = priorityKeywords.test(line);
+            candidates.push({ val, priority: hasKey ? 2 : 1 });
+          }
+        });
+      });
+
+      if (candidates.length === 0) return '';
+      candidates.sort((a, b) => (b.priority - a.priority) || (b.val - a.val));
+      return candidates[0].val;
+    }
+
+    // ==================== 彈跳視窗：額外加收入 ====================
+    function openExtraIncomeModal() {
+      const today = getDefaultDateInCurrentMonth();
+      const modalBox = document.getElementById('modal-box');
+      modalBox.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-slate-900">新增額外收入</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg px-2">✕</button>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">收入金額 (NT$)</label>
+            <input id="inc-amount" type="number" inputmode="numeric" placeholder="例如：500"
+              class="w-full text-xl font-extrabold px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">項目說明</label>
+            <input id="inc-note" type="text" placeholder="例如：解題津貼、獎學金、二手拍賣..."
+              class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">入帳日期</label>
+            <input id="inc-date" type="date" value="${today}"
+              class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600" />
+          </div>
+        </div>
+        <button onclick="submitExtraIncome()" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition">
+          確認計入本月收入
+        </button>
+      `;
+      document.getElementById('modal-overlay').classList.remove('hidden');
+      setTimeout(() => document.getElementById('inc-amount')?.focus(), 60);
+    }
+
+    function submitExtraIncome() {
+      const amt = Number(document.getElementById('inc-amount').value);
+      const note = document.getElementById('inc-note').value.trim() || '額外收入';
+      const date = document.getElementById('inc-date').value || getDefaultDateInCurrentMonth();
+      if (!amt || amt <= 0) {
+        showToast('請輸入大於 0 的金額', 'warn');
+        return;
+      }
+      state.extraIncomes.push({
+        id: 'inc_' + Date.now(),
+        amount: amt,
+        note,
+        date
+      });
+      saveState();
+      closeModal();
+      render();
+      showToast(`已新增收入 +$${amt.toLocaleString()}`, 'success');
+    }
+
+    function deleteExtraIncome(id) {
+      state.extraIncomes = state.extraIncomes.filter(i => i.id !== id);
+      saveState();
+      render();
+      showToast('已刪除該筆收入');
+    }
+
+    // ==================== 彈跳視窗：家教互動月曆多日快選排課 ====================
+    let scheduleDraft = {
+      studentId: '',
+      selectedDates: [],
+      hours: 2,
+      initialStatus: 'pending'
+    };
+
+    function openMultiDayScheduleModal(studentId) {
+      const st = state.students.find(s => s.id === studentId);
+      if (!st) return;
+      scheduleDraft = {
+        studentId: st.id,
+        selectedDates: [],
+        hours: st.defaultHours || 2,
+        initialStatus: 'pending'
+      };
+      renderMultiDayScheduleModal();
+    }
+
+    function renderMultiDayScheduleModal() {
+      const st = state.students.find(s => s.id === scheduleDraft.studentId);
+      if (!st) return;
+
+      const [yearStr, monthStr] = state.currentMonth.split('-');
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+      const firstDayWeekday = new Date(year, month - 1, 1).getDay();
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      const perLessonAmount = st.billingType === 'hourly'
+        ? Math.round(st.rate * scheduleDraft.hours)
+        : st.rate;
+      const totalEstimated = perLessonAmount * scheduleDraft.selectedDates.length;
+
+      let calendarCells = '';
+      for (let i = 0; i < firstDayWeekday; i++) {
+        calendarCells += `<div class="h-9"></div>`;
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
+        const isSelected = scheduleDraft.selectedDates.includes(dateStr);
+        calendarCells += `
+          <button type="button" onclick="toggleScheduleDate('${dateStr}')" class="h-9 rounded-xl text-xs font-bold transition ${
+            isSelected
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/60'
+          }">${d}</button>
+        `;
+      }
+
+      const modalBox = document.getElementById('modal-box');
+      modalBox.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">${escapeHtml(st.name)} · 多日快選排課</h3>
+            <p class="text-xs text-slate-500 mt-0.5">${formatMonthLabel(state.currentMonth)}（僅記月/日與星期，免填幾點幾分）</p>
+          </div>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg px-2">✕</button>
+        </div>
+
+        ${st.billingType === 'hourly' ? `
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1.5">每次上課時數（$${st.rate}/hr）</label>
+            <div class="grid grid-cols-5 gap-1.5">
+              ${[1, 1.5, 2, 2.5, 3].map(h => `
+                <button type="button" onclick="setScheduleHours(${h})" class="py-2 rounded-xl text-xs font-bold border transition ${
+                  scheduleDraft.hours === h ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200'
+                }">${h}h</button>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 星期快捷全選鍵 -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-slate-700">快捷全選本月星期</span>
+            <button type="button" onclick="clearScheduleDates()" class="text-[11px] text-slate-400 hover:text-slate-700">清除已選</button>
+          </div>
+          <div class="grid grid-cols-4 gap-1.5">
+            <button type="button" onclick="toggleWeekdayInMonth(1)" class="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700">全選週一</button>
+            <button type="button" onclick="toggleWeekdayInMonth(3)" class="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700">全選週三</button>
+            <button type="button" onclick="toggleWeekdayInMonth(0)" class="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700">全選週日</button>
+            <button type="button" onclick="toggleWeekdayInMonth(6)" class="py-1.5 px-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700">全選週六</button>
+          </div>
+        </div>
+
+        <!-- 互動式月曆格子（一次點選多天） -->
+        <div class="border border-slate-200/80 rounded-2xl p-3 bg-white">
+          <div class="grid grid-cols-7 text-center text-[11px] font-semibold text-slate-400 mb-1.5">
+            <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+          </div>
+          <div class="grid grid-cols-7 gap-1">
+            ${calendarCells}
+          </div>
+        </div>
+
+        <!-- 入帳狀態選擇 -->
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" onclick="setScheduleInitialStatus('pending')" class="py-2 px-3 rounded-xl border text-xs font-bold transition ${
+            scheduleDraft.initialStatus === 'pending'
+              ? 'bg-amber-50 text-amber-800 border-amber-400'
+              : 'bg-white text-slate-500 border-slate-200'
+          }">
+            ⏳ 先記月結待收款
+          </button>
+          <button type="button" onclick="setScheduleInitialStatus('paid')" class="py-2 px-3 rounded-xl border text-xs font-bold transition ${
+            scheduleDraft.initialStatus === 'paid'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-400'
+              : 'bg-white text-slate-500 border-slate-200'
+          }">
+            ✓ 已現場領現入帳
+          </button>
+        </div>
+
+        <button onclick="submitMultiDaySchedule()" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition">
+          確認排入 ${scheduleDraft.selectedDates.length} 堂課（共 $${totalEstimated.toLocaleString()}）
+        </button>
+      `;
+
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    }
+
+    function toggleScheduleDate(dateStr) {
+      const idx = scheduleDraft.selectedDates.indexOf(dateStr);
+      if (idx >= 0) {
+        scheduleDraft.selectedDates.splice(idx, 1);
+      } else {
+        scheduleDraft.selectedDates.push(dateStr);
+      }
+      renderMultiDayScheduleModal();
+    }
+
+    function toggleWeekdayInMonth(targetWeekday) {
+      const [yearStr, monthStr] = state.currentMonth.split('-');
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      const matchingDates = [];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dt = new Date(year, month - 1, d);
+        if (dt.getDay() === targetWeekday) {
+          matchingDates.push(`${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`);
+        }
+      }
+
+      const allIncluded = matchingDates.every(d => scheduleDraft.selectedDates.includes(d));
+      if (allIncluded) {
+        scheduleDraft.selectedDates = scheduleDraft.selectedDates.filter(d => !matchingDates.includes(d));
+      } else {
+        matchingDates.forEach(d => {
+          if (!scheduleDraft.selectedDates.includes(d)) scheduleDraft.selectedDates.push(d);
+        });
+      }
+      renderMultiDayScheduleModal();
+    }
+
+    function clearScheduleDates() {
+      scheduleDraft.selectedDates = [];
+      renderMultiDayScheduleModal();
+    }
+
+    function setScheduleHours(h) {
+      scheduleDraft.hours = h;
+      renderMultiDayScheduleModal();
+    }
+
+    function setScheduleInitialStatus(st) {
+      scheduleDraft.initialStatus = st;
+      renderMultiDayScheduleModal();
+    }
+
+    function submitMultiDaySchedule() {
+      if (scheduleDraft.selectedDates.length === 0) {
+        showToast('請至少點選 1 個上課日期', 'warn');
+        return;
+      }
+      const st = state.students.find(s => s.id === scheduleDraft.studentId);
+      if (!st) return;
+
+      const perAmount = st.billingType === 'hourly'
+        ? Math.round(st.rate * scheduleDraft.hours)
+        : st.rate;
+
+      scheduleDraft.selectedDates.sort().forEach(dateStr => {
+        state.lessons.push({
+          id: 'les_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+          studentId: st.id,
+          studentName: st.name,
+          billingType: st.billingType,
+          hours: st.billingType === 'hourly' ? scheduleDraft.hours : 1,
+          amount: perAmount,
+          date: dateStr,
+          status: scheduleDraft.initialStatus
+        });
+      });
+
+      saveState();
+      closeModal();
+      render();
+      showToast(`已排入 ${st.name} 共 ${scheduleDraft.selectedDates.length} 堂課`, 'success');
+    }
+
+    function toggleLessonPaid(lessonId) {
+      const lesson = state.lessons.find(l => l.id === lessonId);
+      if (!lesson) return;
+      lesson.status = lesson.status === 'paid' ? 'pending' : 'paid';
+      saveState();
+      render();
+      showToast(lesson.status === 'paid' ? `已確認領薪 +$${lesson.amount.toLocaleString()}` : '已改回月結待收款', 'success');
+    }
+
+    function markAllLessonsPaid() {
+      let count = 0;
+      let total = 0;
+      state.lessons.forEach(l => {
+        if (l.status === 'pending') {
+          l.status = 'paid';
+          count++;
+          total += Number(l.amount || 0);
+        }
+      });
+      saveState();
+      render();
+      showToast(`已全數領薪入帳 ${count} 堂（+$${total.toLocaleString()}）`, 'success');
+    }
+
+    function deleteLesson(lessonId) {
+      state.lessons = state.lessons.filter(l => l.id !== lessonId);
+      saveState();
+      render();
+      showToast('已移除該堂課程');
+    }
+
+    // ==================== 新增家教學生 ====================
+    function openAddStudentModal() {
+      const modalBox = document.getElementById('modal-box');
+      modalBox.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-slate-900">新增家教學生</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg px-2">✕</button>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">學生稱呼</label>
+            <input id="st-name" type="text" placeholder="例如：內湖高中生"
+              class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-slate-900" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">計費方式</label>
+            <select id="st-billing" class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white">
+              <option value="hourly">按小時計費（時薪制）</option>
+              <option value="session">按次計費（單堂固定金額）</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">金額 (NT$)</label>
+            <input id="st-rate" type="number" inputmode="numeric" placeholder="例如：600"
+              class="w-full text-sm font-bold px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-slate-900" />
+          </div>
+        </div>
+        <button onclick="submitAddStudent()" class="w-full py-3 rounded-xl bg-slate-900 text-white text-xs font-bold">
+          儲存學生
+        </button>
+      `;
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    }
+
+    function submitAddStudent() {
+      const name = document.getElementById('st-name').value.trim();
+      const billingType = document.getElementById('st-billing').value;
+      const rate = Number(document.getElementById('st-rate').value);
+      if (!name || !rate || rate <= 0) {
+        showToast('請完整填寫學生名稱與金額', 'warn');
+        return;
+      }
+      state.students.push({
+        id: 'st_' + Date.now(),
+        name,
+        billingType,
+        rate,
+        defaultHours: 2,
+        color: 'slate'
+      });
+      saveState();
+      closeModal();
+      render();
+      showToast(`已新增學生：${name}`, 'success');
+    }
+
+    function deleteStudent(id) {
+      state.students = state.students.filter(s => s.id !== id);
+      saveState();
+      render();
+      showToast('已移除學生');
+    }
+
+    // ==================== 固定收支規則與月結歸檔 ====================
+    function openEditFixedRuleModal(ruleId) {
+      const rule = state.fixedRules.find(r => r.id === ruleId);
+      if (!rule) return;
+      const modalBox = document.getElementById('modal-box');
+      modalBox.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-slate-900">修改固定項目金額</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg px-2">✕</button>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">項目名稱</label>
+            <input id="edit-fr-title" type="text" value="${escapeHtml(rule.title)}"
+              class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">每月金額 (NT$)</label>
+            <input id="edit-fr-amount" type="number" inputmode="numeric" value="${rule.amount}"
+              class="w-full text-lg font-bold px-3.5 py-2.5 rounded-xl border border-slate-300" />
+          </div>
+        </div>
+        <button onclick="submitEditFixedRule('${rule.id}')" class="w-full py-3 rounded-xl bg-slate-900 text-white text-xs font-bold">
+          儲存修改
+        </button>
+      `;
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    }
+
+    function submitEditFixedRule(ruleId) {
+      const rule = state.fixedRules.find(r => r.id === ruleId);
+      if (!rule) return;
+      const title = document.getElementById('edit-fr-title').value.trim();
+      const amt = Number(document.getElementById('edit-fr-amount').value);
+      if (!title || amt < 0) {
+        showToast('請輸入有效名稱與金額', 'warn');
+        return;
+      }
+      rule.title = title;
+      rule.amount = amt;
+      saveState();
+      closeModal();
+      render();
+      showToast('已更新固定項目', 'success');
+    }
+
+    function openAddFixedRuleModal() {
+      const modalBox = document.getElementById('modal-box');
+      modalBox.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-slate-900">新增固定收支規則</h3>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg px-2">✕</button>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">類型</label>
+            <select id="new-fr-type" class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white">
+              <option value="expense">每月固定扣除</option>
+              <option value="income">每月固定收入</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">項目名稱</label>
+            <input id="new-fr-title" type="text" placeholder="例如：手機月租費"
+              class="w-full text-xs px-3.5 py-2.5 rounded-xl border border-slate-300" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">每月金額 (NT$)</label>
+            <input id="new-fr-amount" type="number" inputmode="numeric" placeholder="例如：499"
+              class="w-full text-lg font-bold px-3.5 py-2.5 rounded-xl border border-slate-300" />
+          </div>
+        </div>
+        <button onclick="submitAddFixedRule()" class="w-full py-3 rounded-xl bg-slate-900 text-white text-xs font-bold">
+          新增規則
+        </button>
+      `;
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    }
+
+    function submitAddFixedRule() {
+      const type = document.getElementById('new-fr-type').value;
+      const title = document.getElementById('new-fr-title').value.trim();
+      const amount = Number(document.getElementById('new-fr-amount').value);
+      if (!title || !amount || amount <= 0) {
+        showToast('請完整填寫項目與金額', 'warn');
+        return;
+      }
+      state.fixedRules.push({
+        id: 'fr_' + Date.now(),
+        title,
+        type,
+        amount
+      });
+      saveState();
+      closeModal();
+      render();
+      showToast('已新增固定規則', 'success');
+    }
+
+    function deleteFixedRule(id) {
+      state.fixedRules = state.fixedRules.filter(r => r.id !== id);
+      saveState();
+      render();
+      showToast('已刪除固定規則');
+    }
+
+    function getNextYearMonth(ym) {
+      const [yStr, mStr] = ym.split('-');
+      let y = Number(yStr);
+      let m = Number(mStr) + 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+      return `${y}-${String(m).padStart(2, '0')}`;
+    }
+
+    function settleCurrentMonth() {
+      const f = computeFinancials();
+      const report = {
+        month: state.currentMonth,
+        realizedIncome: f.realizedIncome,
+        fixedExpense: f.fixedExpense,
+        dailyExpenseTotal: f.dailyExpenseTotal,
+        bySubcat: { ...f.bySubcat },
+        netAvailable: f.netAvailable,
+        settledAt: new Date().toISOString()
+      };
+
+      // 歷史月結報表自動滾動保留最近 3 個已結算月份
+      state.archivedMonths.push(report);
+      if (state.archivedMonths.length > 3) {
+        state.archivedMonths = state.archivedMonths.slice(-3);
+      }
+
+      // 保留尚未領薪（pending）的家教課程結轉到下個月，已領薪的清空
+      state.lessons = state.lessons.filter(l => l.status === 'pending');
+      state.expenses = [];
+      state.extraIncomes = [];
+      state.currentMonth = getNextYearMonth(state.currentMonth);
+
+      saveState();
+      render();
+      showToast(`已結算歸檔，進入 ${formatMonthLabel(state.currentMonth)}`, 'success');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.add('hidden');
+    }
+
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'modal-overlay') closeModal();
+    });
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // 初始化渲染
+    render();
+  </script>
+</body>
+</html>
